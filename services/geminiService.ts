@@ -46,49 +46,113 @@ export class GeminiService {
     }
   }
 
-  // --- SCRAPING HELPER (Client-Side Technique) ---
+  /**
+   * Fetch raw HTML via a CORS proxy. Tries primary proxy, then fallback.
+   */
+  private async fetchHtmlViaProxy(url: string): Promise<string | null> {
+    const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    ];
+    for (let i = 0; i < proxies.length; i++) {
+      try {
+        const res = await fetch(proxies[i], { signal: AbortSignal.timeout(15000) });
+        if (!res.ok) continue;
+        const isRaw = proxies[i].includes('/raw?');
+        const html = isRaw ? await res.text() : (await res.json()).contents;
+        if (html && typeof html === 'string' && html.length > 200) return html;
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extract main article/content from HTML with structure preserved (headings, lists, tables).
+   */
+  private extractStructuredTextFromHtml(doc: Document): string {
+    const noiseTags = ['script', 'style', 'svg', 'noscript', 'iframe', 'nav', 'aside', 'form', 'button'];
+    const clone = doc.body.cloneNode(true) as HTMLElement;
+    noiseTags.forEach(tag => {
+      clone.querySelectorAll(tag).forEach(el => el.remove());
+    });
+    // Remove common non-content wrappers but keep their children
+    clone.querySelectorAll('header, footer').forEach(el => {
+      el.replaceWith(...el.childNodes);
+    });
+
+    const mainSelectors = [
+      'article', '[role="main"]', 'main', '.post-content', '.article-body', '.content', '.entry-content',
+      '#content', '#main', '.main', '#container', '.product-detail', '[itemprop="articleBody"]',
+      '.page-content', '.product-description', '.detail-content',
+    ];
+    let root: Element = clone;
+    for (const sel of mainSelectors) {
+      const el = clone.querySelector(sel);
+      if (el && el.textContent && el.textContent.trim().length > 100) {
+        root = el;
+        break;
+      }
+    }
+
+    const out: string[] = [];
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = node.textContent?.trim();
+        if (t) out.push(t);
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const el = node as Element;
+      const tag = el.tagName.toLowerCase();
+      const text = (el as HTMLElement).innerText?.trim() || '';
+      if (tag === 'h1') out.push('\n# ' + text + '\n');
+      else if (tag === 'h2') out.push('\n## ' + text + '\n');
+      else if (tag === 'h3') out.push('\n### ' + text + '\n');
+      else if (tag === 'h4') out.push('\n#### ' + text + '\n');
+      else if (tag === 'table') {
+        const rows = (el as HTMLTableElement).querySelectorAll('tr');
+        const rowTexts = Array.from(rows).map(tr =>
+          Array.from(tr.querySelectorAll('th, td')).map(c => (c as HTMLElement).innerText?.trim().replace(/\|/g, '\\|')).join(' | ')
+        );
+        if (rowTexts.length) out.push('\n' + rowTexts.join('\n') + '\n');
+      } else if (tag === 'p' || tag === 'li') {
+        if (text && !out[out.length - 1]?.endsWith(text)) out.push(text);
+      } else {
+        el.childNodes.forEach(n => walk(n));
+      }
+    };
+    root.childNodes.forEach(n => walk(n));
+    let cleaned = out.join(' ').replace(/\s+/g, ' ').trim();
+    if (cleaned.length < 200) cleaned = (root as HTMLElement).innerText?.replace(/\s+/g, ' ').trim() || cleaned;
+    return cleaned.substring(0, 60000);
+  }
+
+  /** Web-scrape a URL and return structured text for extraction, or null if blocked/failed. */
   private async scrapeUrl(url: string): Promise<string | null> {
     try {
       console.log(`Attempting to scrape: ${url}`);
-      
-      // Use a CORS proxy to bypass browser restrictions
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const response = await fetch(proxyUrl);
-      
-      if (!response.ok) return null;
+      const rawHtml = await this.fetchHtmlViaProxy(url);
+      if (!rawHtml) return null;
 
-      const data = await response.json();
-      const rawHtml = data.contents;
-
-      if (!rawHtml || typeof rawHtml !== 'string') return null;
-
-      // Parse and Clean HTML
       const parser = new DOMParser();
       const doc = parser.parseFromString(rawHtml, 'text/html');
+      const bodyLower = doc.body?.innerText?.toLowerCase() || '';
 
-      // Check for "Anti-Bot" or "JS Required" pages
-      const pageText = doc.body.innerText.toLowerCase();
-      if (pageText.includes("enable javascript") || 
-          pageText.includes("access denied") || 
-          pageText.includes("security check") ||
-          pageText.length < 500) {
-          console.warn("Scraping blocked or empty");
-          return null; 
+      if (
+        bodyLower.includes('enable javascript') ||
+        bodyLower.includes('access denied') ||
+        bodyLower.includes('security check') ||
+        bodyLower.includes('captcha') ||
+        bodyLower.includes('blocked') ||
+        bodyLower.length < 300
+      ) {
+        console.warn("Scraping blocked or empty");
+        return null;
       }
 
-      // Remove noise
-      const noiseTags = ['script', 'style', 'svg', 'noscript', 'iframe', 'footer', 'nav', 'header', 'aside'];
-      noiseTags.forEach(tag => {
-        const elements = doc.querySelectorAll(tag);
-        elements.forEach(el => el.remove());
-      });
-
-      const mainContent = doc.querySelector('main') || doc.querySelector('#container') || doc.body;
-      let cleanedText = mainContent.innerText || "";
-      cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
-      
-      return cleanedText.substring(0, 50000);
-
+      return this.extractStructuredTextFromHtml(doc);
     } catch (error) {
       console.warn("Scraping failed, falling back to Search Tool", error);
       return null;
@@ -106,54 +170,45 @@ export class GeminiService {
       let tools: any[] | undefined = undefined;
 
       if (inputType === 'url') {
-        // STRATEGY: Hybrid Scraping with Fallback
         const scrapedContent = await this.scrapeUrl(input);
+        const urlExtractionTask = `
+Extract all meaningful data from the content below into **clean, structured Markdown** (same as for documents).
+- Preserve headings (# ## ###), lists, and any tables. If you see table-like data, output a proper Markdown table.
+- For product/e-commerce pages: use a comparison table (e.g. Product Name | Price | Rating | Key Specs) and use [text](${input}) for links where relevant.
+- For articles: use standard Markdown with headers and paragraphs.
+- For invoices/financial content: preserve layout and use tables where appropriate.
+- Remove ads, navigation text, and non-content noise. Output only the structured data.
+`.trim();
 
         if (scrapedContent) {
-            // SCENARIO A: Direct Scrape Success
-            console.log("Using Scraped HTML Content");
-            contents = {
-                role: 'user',
-                parts: [{ 
-                    text: `**SOURCE URL**: ${input}\n\n**RAW WEBPAGE CONTENT**: \n${scrapedContent}\n\n**TASK**: Extract data from this content.\n- If it's a product list, create a **Markdown Table** (Product, Price, Rating, Specs).\n- Construct links as [Name](${input}).\n- Ignore garbage text.` 
-                }]
-            };
+          console.log("Using scraped webpage content for extraction");
+          contents = {
+            role: 'user',
+            parts: [{
+              text: `**SOURCE URL**: ${input}\n\n**WEBPAGE CONTENT (extracted text/structure)**:\n\n${scrapedContent}\n\n**TASK**: ${urlExtractionTask}`,
+            }],
+          };
         } else {
-            // SCENARIO B: Blocked/Failed -> Use Google Search Grounding
-            const smartQuery = this.getSearchQueryFromUrl(input);
-            console.log(`Fallback to Google Search with query: "${smartQuery}"`);
-            
-            contents = {
-                role: 'user',
-                parts: [{ 
-                    text: `You are an expert Data Extractor.
-                    
-                    **TASK**: The user wants to extract product list data from this URL: ${input}
-                    
-                    **ISSUE**: The URL is protected against direct reading.
-                    
-                    **SOLUTION**: 
-                    1. Use the **Google Search Tool** to search for: "${smartQuery}".
-                    2. Look for the *latest* prices and details for these products.
-                    3. **COMPILE A REPORT**: Create a detailed **Markdown Table** with the results.
-                    
-                    **TABLE COLUMNS**:
-                    | Product Name | Price (approx) | Rating | Key Specs |
-                    | :--- | :--- | :--- | :--- |
-                    | [Name of Product](Link found in search) | ₹... | 4.x | ... |
+          const smartQuery = this.getSearchQueryFromUrl(input);
+          console.log(`Fallback to Google Search with query: "${smartQuery}"`);
+          contents = {
+            role: 'user',
+            parts: [{
+              text: `The user wants structured data from this URL (we cannot read it directly): ${input}
 
-                    **RULES**:
-                    - NEVER say "I cannot access".
-                    - ALWAYS provide a table based on the search results.
-                    - If exact price is unknown, provide a range or "Check Site".
-                    ` 
-                }]
-            };
-            tools = [{ googleSearch: {} }];
+Use the **Google Search** tool to search for: "${smartQuery}".
+
+Then produce a **structured Markdown report** from the search results:
+- Use clear headings and, where appropriate, Markdown tables (e.g. Product Name | Price | Rating | Key Specs).
+- Include real links in the form [Name](url) when available.
+- If it's product/catalog data, output a comparison table. If it's an article or general page, use headings and paragraphs.
+- Do not say you cannot access; compile the best possible structured report from search results.
+- Match the same output style as document extraction: clean Markdown, tables preserved, no code fences around the report.`,
+            }],
+          };
+          tools = [{ googleSearch: {} }];
         }
-        
       } else if (inputType === 'base64' && mimeType) {
-        // For Files (PDF, Image, Audio, Video)
         contents = {
           role: 'user',
           parts: [
@@ -163,7 +218,9 @@ export class GeminiService {
                 data: input,
               },
             },
-            { text: `**TASK**: Extract all meaningful data from this file into a structured Markdown format. If tables are detected, preserve them. If it's an invoice, extract details.` }
+            {
+              text: `**TASK**: Extract all meaningful data from this file into **clean, structured Markdown**. Preserve headings, lists, and tables. If tables are detected, output proper Markdown tables. If it's an invoice or financial document, preserve layout and use tables. Output only the structured data—no code fences around the report.`,
+            },
           ],
         };
       } else {
@@ -185,16 +242,13 @@ export class GeminiService {
       });
 
       let text = response.text || "No content extracted.";
-      
-      // Cleanup
       text = text.replace(/```markdown/gi, '').replace(/```/g, '').trim();
 
-      // Heuristic Type Detection
       let detectedType = 'General Document';
       const lowerText = text.toLowerCase();
-      if (lowerText.includes('invoice') || lowerText.includes('total')) detectedType = 'Financial Document';
-      else if (lowerText.includes('|') && lowerText.includes('price')) detectedType = 'Product List';
-      else if (inputType === 'url') detectedType = 'Web Data';
+      if (lowerText.includes('invoice') || lowerText.includes('total') || lowerText.includes('bill to')) detectedType = 'Financial Document';
+      else if (lowerText.includes('|') && (lowerText.includes('price') || lowerText.includes('product'))) detectedType = 'Product List';
+      else if (inputType === 'url') detectedType = 'Web Page';
 
       return {
         rawText: text,
