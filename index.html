@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DocuExtract AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background-color: #f8fafc;
+        color: #1e293b;
+      }
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+
+      /* Professional Markdown Table Styling */
+      .prose {
+        max-width: none !important;
+        color: #334155;
+      }
+      
+      .prose table {
+        width: 100%;
+        border-collapse: separate; 
+        border-spacing: 0;
+        margin-top: 1.5rem;
+        margin-bottom: 2rem;
+        font-size: 0.9rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        overflow: hidden;
+        background: white;
+      }
+      
+      .prose thead {
+        background-color: #f1f5f9;
+      }
+
+      .prose th {
+        text-align: left;
+        padding: 16px;
+        font-weight: 700;
+        color: #1e293b;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+        border-bottom: 2px solid #cbd5e1;
+        background-color: #f8fafc;
+      }
+
+      .prose td {
+        padding: 14px 16px;
+        border-bottom: 1px solid #e2e8f0;
+        color: #334155;
+        vertical-align: top;
+        line-height: 1.6;
+        white-space: normal;
+      }
+
+      .prose tr:last-child td {
+        border-bottom: none;
+      }
+
+      .prose tr:hover {
+        background-color: #f8fafc;
+      }
+      
+      /* Headers */
+      .prose h1 {
+        font-size: 2.2rem;
+        color: #0f172a;
+        margin-bottom: 1.5rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-weight: 800;
+        letter-spacing: -0.025em;
+      }
+      
+      .prose h2 {
+        font-size: 1.5rem;
+        color: #1e293b;
+        margin-top: 2.5rem;
+        margin-bottom: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.015em;
+      }
+
+      /* Strict Light Theme Enforcements */
+      .prose pre {
+        background-color: #f1f5f9 !important;
+        color: #334155 !important;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        box-shadow: none !important;
+      }
+      
+      .prose code {
+        color: #0f172a !important;
+        background-color: #f1f5f9 !important;
+        padding: 0.2em 0.4em;
+        border-radius: 4px;
+        font-weight: 500;
+      }
+      
+      .prose blockquote {
+        background: white;
+        border-left-color: #3b82f6;
+        color: #475569;
+      }
+      
+      /* Links */
+      .prose a {
+        color: #2563eb;
+        text-decoration: underline;
+        font-weight: 500;
+      }
+      
+      .prose a:hover {
+        color: #1d4ed8;
+      }
+
+      /* Print specific */
+      @media print {
+        body { background: white; }
+        .prose table { box-shadow: none; border: 1px solid #000; }
+        .prose thead { background: #eee !important; -webkit-print-color-adjust: exact; }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "lucide-react": "https://esm.sh/lucide-react@^0.564.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.41.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "remark-gfm": "https://esm.sh/remark-gfm@^4.0.1",
+    "react-markdown": "https://esm.sh/react-markdown@^10.1.0",
+    "docx": "https://esm.sh/docx@^9.5.3",
+    "jspdf": "https://esm.sh/jspdf@2.5.2",
+    "jspdf-autotable": "https://esm.sh/jspdf-autotable@3.8.2",
+    "file-saver": "https://esm.sh/file-saver@^2.0.5"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

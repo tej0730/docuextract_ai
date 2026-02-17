@@ -1,0 +1,5 @@
+{
+  "name": "DocuExtract AI",
+  "description": "An intelligent multimodal document extraction tool that converts PDF, Website, Audio, Video, and Image inputs into structured PDF and Word documents using Gemini AI.",
+  "requestFramePermissions": []
+}
